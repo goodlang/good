@@ -1,7 +1,9 @@
-Please do not send pull requests to the golang/* repositories.
+# Description
 
-We do, however, take contributions gladly.
+# What I've done
 
-See https://golang.org/doc/contribute.html
+# Issue refs
 
-Thanks!
+Checklist to be merged:
+  - [ ] I've gofmt'd my code
+  - [ ] I've check that tests are passed and all works as expected.
