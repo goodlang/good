@@ -6,7 +6,7 @@ go:
 install: true
 
 script:
-  - echo `pwd`
-  - cd src; GOROOT_BOOTSTRAP=$GOROOT GOROOT=`pwd` ./make.bash
-  - echo `pwd`
+  - cd src
+  - GOROOT_BOOTSTRAP=$GOROOT GOROOT=`pwd` ./make.bash
+  - cd ..
   - GOROOT_BOOTSTRAP=$GOROOT GOROOT=`pwd` bin/go tool dist test
