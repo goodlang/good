@@ -1,0 +1,9 @@
+language: go
+
+go:
+  - 1.7.4
+
+install: true
+
+script:
+  - cd src; GOROOT_BOOTSTRAP=$GOROOT GOROOT=`pwd` ./make.bash
