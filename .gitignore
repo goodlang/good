@@ -43,3 +43,4 @@ VERSION.cache
 
 bin/
 pkg/
+.idea

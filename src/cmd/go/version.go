@@ -12,8 +12,8 @@ import (
 var cmdVersion = &Command{
 	Run:       runVersion,
 	UsageLine: "version",
-	Short:     "print Go version",
-	Long:      `Version prints the Go version, as reported by runtime.Version.`,
+	Short:     "print Good version",
+	Long:      `Version prints the Good version, as reported by runtime.Version.`,
 }
 
 func runVersion(cmd *Command, args []string) {
@@ -21,5 +21,5 @@ func runVersion(cmd *Command, args []string) {
 		cmd.Usage()
 	}
 
-	fmt.Printf("go version %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("good version %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
