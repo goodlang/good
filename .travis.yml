@@ -1,0 +1,14 @@
+language: go
+
+go:
+  - 1.7.4
+
+install: true
+
+script:
+  - cd src
+  - echo `pwd`
+  - GOROOT_BOOTSTRAP=$GOROOT GOROOT=`pwd` ./make.bash
+  - cd ..
+  - echo `pwd`
+  - GOROOT=`pwd` bin/go tool dist test
