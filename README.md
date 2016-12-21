@@ -1,4 +1,5 @@
 # The Good Programming Language
+[![discord](https://canary.discordapp.com/api/guilds/260892107856805899/widget.png)](https://discord.gg/X7U2jNw)
 
 Good is an open source programming language based on Golang that makes it easy to build simple,
 reliable, and efficient software.
