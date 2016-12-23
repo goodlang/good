@@ -1169,7 +1169,8 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 			h.flags &^= sameSizeGrow
 		}
 	}
-	h.flags &= evacuation
+	println("evacuate out")
+	h.flags ^= evacuation
 }
 
 func ismapkey(t *_type) bool {
