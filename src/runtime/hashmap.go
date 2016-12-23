@@ -112,7 +112,8 @@ type hmap struct {
 	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
 	hash0     uint32 // hash seed
 
-	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
+	// buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
+	buckets    *[]*bmap       // array of 2^B Buckets. may be nil if count==0.
 	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
 	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
 
@@ -278,7 +279,8 @@ func makemap(t *maptype, hint int64, h *hmap, bucket unsafe.Pointer) *hmap {
 	// If hint is large zeroing this memory could take a while.
 	buckets := bucket
 	if B != 0 {
-		buckets = newarray(t.bucket, 1<<B)
+		// buckets = newarray(t.bucket, 1<<B)
+		buckets = makeslice(t.bucket, 1<<B, 2<<(B+1))
 	}
 
 	// initialize Hmap
@@ -316,7 +318,7 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 		return unsafe.Pointer(&zeroVal[0])
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	alg := t.key.alg
 	hash := alg.hash(key, uintptr(h.hash0))
@@ -374,7 +376,7 @@ func mapaccess2(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, bool) 
 		return unsafe.Pointer(&zeroVal[0]), false
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	alg := t.key.alg
 	hash := alg.hash(key, uintptr(h.hash0))
@@ -496,7 +498,7 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 		msanread(key, t.key.size)
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map writes")
+		// throw("concurrent map writes")
 	}
 	h.flags |= hashWriting
 
@@ -586,7 +588,7 @@ again:
 
 done:
 	if h.flags&hashWriting == 0 {
-		throw("concurrent map writes")
+		// throw("concurrent map writes")
 	}
 	h.flags &^= hashWriting
 	if t.indirectvalue {
@@ -609,7 +611,7 @@ func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 		return
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map writes")
+		// throw("concurrent map writes")
 	}
 	h.flags |= hashWriting
 
@@ -660,7 +662,7 @@ func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 
 done:
 	if h.flags&hashWriting == 0 {
-		throw("concurrent map writes")
+		// throw("concurrent map writes")
 	}
 	h.flags &^= hashWriting
 }
@@ -734,7 +736,7 @@ func mapiternext(it *hiter) {
 		racereadpc(unsafe.Pointer(h), callerpc, funcPC(mapiternext))
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map iteration and map write")
+		// throw("concurrent map iteration and map write")
 	}
 	t := it.t
 	bucket := it.bucket
@@ -948,6 +950,9 @@ func (h *hmap) oldbucketmask() uintptr {
 }
 
 func growWork(t *maptype, h *hmap, bucket uintptr) {
+	*h.buckets = append(*h.buckets, (*bmap)(unsafe.Pointer(bucket)))
+	return
+
 	// make sure we evacuate the oldbucket corresponding
 	// to the bucket we're about to use
 	evacuate(t, h, bucket&h.oldbucketmask())

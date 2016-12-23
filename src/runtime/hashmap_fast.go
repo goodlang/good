@@ -18,7 +18,7 @@ func mapaccess1_fast32(t *maptype, h *hmap, key uint32) unsafe.Pointer {
 		return unsafe.Pointer(&zeroVal[0])
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	var b *bmap
 	if h.B == 0 {
@@ -67,7 +67,7 @@ func mapaccess2_fast32(t *maptype, h *hmap, key uint32) (unsafe.Pointer, bool) {
 		return unsafe.Pointer(&zeroVal[0]), false
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	var b *bmap
 	if h.B == 0 {
@@ -116,7 +116,7 @@ func mapaccess1_fast64(t *maptype, h *hmap, key uint64) unsafe.Pointer {
 		return unsafe.Pointer(&zeroVal[0])
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	var b *bmap
 	if h.B == 0 {
@@ -165,7 +165,7 @@ func mapaccess2_fast64(t *maptype, h *hmap, key uint64) (unsafe.Pointer, bool) {
 		return unsafe.Pointer(&zeroVal[0]), false
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	var b *bmap
 	if h.B == 0 {
@@ -214,7 +214,7 @@ func mapaccess1_faststr(t *maptype, h *hmap, ky string) unsafe.Pointer {
 		return unsafe.Pointer(&zeroVal[0])
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	key := stringStructOf(&ky)
 	if h.B == 0 {
@@ -323,7 +323,7 @@ func mapaccess2_faststr(t *maptype, h *hmap, ky string) (unsafe.Pointer, bool) {
 		return unsafe.Pointer(&zeroVal[0]), false
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		// throw("concurrent map read and map write")
 	}
 	key := stringStructOf(&ky)
 	if h.B == 0 {
