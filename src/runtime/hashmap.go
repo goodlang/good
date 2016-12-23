@@ -498,12 +498,13 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if msanenabled {
 		msanread(key, t.key.size)
 	}
+	println("mapassign in")
 	if h.flags&evacuation != 0 {
 		println("mapassign, evacuation found, in")
-		// throw("hw in")
 		printCallers()
+		// throw("hw in")
 		for {
-			usleep(100 * 1000)
+			usleep(100)
 			if h.flags&evacuation == 0 {
 				println("out?")
 				break
@@ -610,6 +611,8 @@ done:
 	if t.indirectvalue {
 		val = *((*unsafe.Pointer)(val))
 	}
+
+	println("mapassign out")
 	return val
 }
 
@@ -1004,12 +1007,13 @@ func growWork(t *maptype, h *hmap, bucket uintptr) {
 
 func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 	h.flags |= evacuation
+	println("evacuate in")
 	printCallers()
 	if h.flags&hashWriting != 0 {
 		println("evacuate, hashWriting found, in")
 		// throw("hw in")
 		for {
-			usleep(100 * 1000)
+			usleep(100)
 			if h.flags&hashWriting == 0 {
 				println("out?")
 				break
@@ -1020,7 +1024,7 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 	b := (*bmap)(add(h.oldbuckets, oldbucket*uintptr(t.bucketsize)))
 	newbit := h.noldbuckets()
 	alg := t.key.alg
-	if !evacuated(b) {
+	if b != nil && !evacuated(b) {
 		// TODO: reuse overflow buckets instead of using new ones, if there
 		// is no iterator using the old buckets.  (If !oldIterator.)
 
@@ -1146,6 +1150,9 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 			b = (*bmap)(add(h.oldbuckets, oldbucket*uintptr(t.bucketsize)))
 			// Preserve b.tophash because the evacuation
 			// state is maintained there.
+			if b == nil {
+				println("b is nil")
+			}
 			if t.bucket.kind&kindNoPointers == 0 {
 				memclrHasPointers(add(unsafe.Pointer(b), dataOffset), uintptr(t.bucketsize)-dataOffset)
 			} else {
