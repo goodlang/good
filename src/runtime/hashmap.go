@@ -61,6 +61,7 @@ import (
 
 const (
 	// Maximum number of key/value pairs a bucket can hold.
+	// bucketCntBits = 3
 	bucketCntBits = 3
 	bucketCnt     = 1 << bucketCntBits
 
@@ -93,10 +94,11 @@ const (
 	minTopHash     = 4 // minimum tophash for a normal filled cell.
 
 	// flags
-	iterator     = 1 // there may be an iterator using buckets
-	oldIterator  = 2 // there may be an iterator using oldbuckets
-	hashWriting  = 4 // a goroutine is writing to the map
-	sameSizeGrow = 8 // the current map growth is to a new map of the same size
+	iterator     = 1  // there may be an iterator using buckets
+	oldIterator  = 2  // there may be an iterator using oldbuckets
+	hashWriting  = 4  // a goroutine is writing to the map
+	sameSizeGrow = 8  // the current map growth is to a new map of the same size
+	evacuation   = 16 // used in evacute() to freeze map writes
 
 	// sentinel bucket ID for iterator checks
 	noCheck = 1<<(8*sys.PtrSize) - 1
@@ -112,8 +114,7 @@ type hmap struct {
 	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
 	hash0     uint32 // hash seed
 
-	// buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
-	buckets    *[]*bmap       // array of 2^B Buckets. may be nil if count==0.
+	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
 	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
 	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
 
@@ -279,8 +280,8 @@ func makemap(t *maptype, hint int64, h *hmap, bucket unsafe.Pointer) *hmap {
 	// If hint is large zeroing this memory could take a while.
 	buckets := bucket
 	if B != 0 {
-		// buckets = newarray(t.bucket, 1<<B)
-		buckets = makeslice(t.bucket, 1<<B, 2<<(B+1))
+		buckets = newarray(t.bucket, 1<<B)
+		// buckets = makeslice(t.bucket, 1<<B, 2<<(B+1))
 	}
 
 	// initialize Hmap
@@ -497,6 +498,19 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if msanenabled {
 		msanread(key, t.key.size)
 	}
+	if h.flags&evacuation != 0 {
+		println("mapassign, evacuation found, in")
+		// throw("hw in")
+		printCallers()
+		for {
+			usleep(100 * 1000)
+			if h.flags&evacuation == 0 {
+				println("out?")
+				break
+			}
+		}
+		println("mapassign, evacuation found, out")
+	}
 	if h.flags&hashWriting != 0 {
 		// throw("concurrent map writes")
 	}
@@ -512,7 +526,9 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 again:
 	bucket := hash & (uintptr(1)<<h.B - 1)
 	if h.growing() {
+		h.flags ^= hashWriting
 		growWork(t, h, bucket)
+		h.flags |= hashWriting
 	}
 	b := (*bmap)(unsafe.Pointer(uintptr(h.buckets) + bucket*uintptr(t.bucketsize)))
 	top := uint8(hash >> (sys.PtrSize*8 - 8))
@@ -598,6 +614,18 @@ done:
 }
 
 func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
+	if h.flags&evacuation != 0 {
+		for {
+			// Wait for 100us, then try to re-preempt in
+			// case of any races.
+			//
+			// Requires system stack.
+			if notetsleep(&sched.safePointNote, 100*1000) && h.flags&evacuation == 0 {
+				noteclear(&sched.safePointNote)
+				break
+			}
+		}
+	}
 	if raceenabled && h != nil {
 		callerpc := getcallerpc(unsafe.Pointer(&t))
 		pc := funcPC(mapdelete)
@@ -734,6 +762,20 @@ func mapiternext(it *hiter) {
 	if raceenabled {
 		callerpc := getcallerpc(unsafe.Pointer(&it))
 		racereadpc(unsafe.Pointer(h), callerpc, funcPC(mapiternext))
+	}
+	if h.flags&evacuation != 0 {
+		println("mapiternext, evacuation found, in")
+		for {
+			// Wait for 100us, then try to re-preempt in
+			// case of any races.
+			//
+			// Requires system stack.
+			if notetsleep(&sched.safePointNote, 100*1000) && h.flags&evacuation == 0 {
+				noteclear(&sched.safePointNote)
+				break
+			}
+		}
+		println("mapiternext, evacuation found, out")
 	}
 	if h.flags&hashWriting != 0 {
 		// throw("concurrent map iteration and map write")
@@ -950,9 +992,6 @@ func (h *hmap) oldbucketmask() uintptr {
 }
 
 func growWork(t *maptype, h *hmap, bucket uintptr) {
-	*h.buckets = append(*h.buckets, (*bmap)(unsafe.Pointer(bucket)))
-	return
-
 	// make sure we evacuate the oldbucket corresponding
 	// to the bucket we're about to use
 	evacuate(t, h, bucket&h.oldbucketmask())
@@ -964,6 +1003,20 @@ func growWork(t *maptype, h *hmap, bucket uintptr) {
 }
 
 func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
+	h.flags |= evacuation
+	printCallers()
+	if h.flags&hashWriting != 0 {
+		println("evacuate, hashWriting found, in")
+		// throw("hw in")
+		for {
+			usleep(100 * 1000)
+			if h.flags&hashWriting == 0 {
+				println("out?")
+				break
+			}
+		}
+		println("evacuate, hashWriting found, out")
+	}
 	b := (*bmap)(add(h.oldbuckets, oldbucket*uintptr(t.bucketsize)))
 	newbit := h.noldbuckets()
 	alg := t.key.alg
@@ -999,7 +1052,8 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 					continue
 				}
 				if top < minTopHash {
-					throw("bad map state")
+					// throw("bad map state")
+					println("bad map state")
 				}
 				k2 := k
 				if t.indirectkey {
@@ -1115,6 +1169,7 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 			h.flags &^= sameSizeGrow
 		}
 	}
+	h.flags &= evacuation
 }
 
 func ismapkey(t *_type) bool {

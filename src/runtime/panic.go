@@ -407,7 +407,26 @@ func printpanics(p *_panic) {
 	if p.recovered {
 		print(" [recovered]")
 	}
-	print("\n")
+	printCallers()
+}
+
+func printCallers() {
+	printnl()
+	for i := 1; ; i++ {
+		pc, f, l, ok := Caller(i)
+		if !ok {
+			break
+		}
+		fpc := FuncForPC(pc)
+		print("\t")
+		print(fpc.Name())
+		print("[")
+		print(f)
+		print(":")
+		print(l)
+		println("]")
+	}
+	printnl()
 }
 
 // The implementation of the predeclared function panic.
