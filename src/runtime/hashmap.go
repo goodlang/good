@@ -318,6 +318,18 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h == nil || h.count == 0 {
 		return unsafe.Pointer(&zeroVal[0])
 	}
+	if h.flags&evacuation != 0 {
+		println("mapaccess1, evacuation found, in")
+		// throw("hw in")
+		for {
+			mapsleep()
+			if h.flags&evacuation == 0 {
+				println("mapaccess1 out")
+				break
+			}
+		}
+		println("mapaccess1, evacuation found, out")
+	}
 	if h.flags&hashWriting != 0 {
 		// throw("concurrent map read and map write")
 	}
@@ -378,6 +390,16 @@ func mapaccess2(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, bool) 
 	}
 	if h.flags&hashWriting != 0 {
 		// throw("concurrent map read and map write")
+	}
+	if h.flags&evacuation != 0 {
+		println("mapiternext, evacuation found, in")
+		for {
+			mapsleep()
+			if h.flags&evacuation == 0 {
+				break
+			}
+		}
+		println("mapiternext, evacuation found, out")
 	}
 	alg := t.key.alg
 	hash := alg.hash(key, uintptr(h.hash0))
@@ -484,6 +506,11 @@ func mapaccess2_fat(t *maptype, h *hmap, key, zero unsafe.Pointer) (unsafe.Point
 	return v, true
 }
 
+//go:nosplit
+func mapsleep() {
+	usleep(50000)
+}
+
 // Like mapaccess, but allocates a slot for the key if it is not present in the map.
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h == nil {
@@ -498,15 +525,14 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if msanenabled {
 		msanread(key, t.key.size)
 	}
-	println("mapassign in")
 	if h.flags&evacuation != 0 {
 		println("mapassign, evacuation found, in")
-		printCallers()
 		// throw("hw in")
 		for {
-			usleep(100)
+			mapsleep()
 			if h.flags&evacuation == 0 {
-				println("out?")
+				println("mapassign out")
+				h.flags |= hashWriting
 				break
 			}
 		}
@@ -612,23 +638,10 @@ done:
 		val = *((*unsafe.Pointer)(val))
 	}
 
-	println("mapassign out")
 	return val
 }
 
 func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
-	if h.flags&evacuation != 0 {
-		for {
-			// Wait for 100us, then try to re-preempt in
-			// case of any races.
-			//
-			// Requires system stack.
-			if notetsleep(&sched.safePointNote, 100*1000) && h.flags&evacuation == 0 {
-				noteclear(&sched.safePointNote)
-				break
-			}
-		}
-	}
 	if raceenabled && h != nil {
 		callerpc := getcallerpc(unsafe.Pointer(&t))
 		pc := funcPC(mapdelete)
@@ -641,6 +654,19 @@ func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 	if h == nil || h.count == 0 {
 		return
 	}
+	if h.flags&evacuation != 0 {
+		println("mapdelete, evacuation found, in")
+		// throw("hw in")
+		for {
+			mapsleep()
+			if h.flags&evacuation == 0 {
+				println("mapdelete out")
+				h.flags |= hashWriting
+				break
+			}
+		}
+		println("mapdelete, evacuation found, out")
+	}
 	if h.flags&hashWriting != 0 {
 		// throw("concurrent map writes")
 	}
@@ -650,7 +676,9 @@ func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 	hash := alg.hash(key, uintptr(h.hash0))
 	bucket := hash & (uintptr(1)<<h.B - 1)
 	if h.growing() {
+		h.flags ^= hashWriting
 		growWork(t, h, bucket)
+		h.flags |= hashWriting
 	}
 	b := (*bmap)(unsafe.Pointer(uintptr(h.buckets) + bucket*uintptr(t.bucketsize)))
 	top := uint8(hash >> (sys.PtrSize*8 - 8))
@@ -769,12 +797,9 @@ func mapiternext(it *hiter) {
 	if h.flags&evacuation != 0 {
 		println("mapiternext, evacuation found, in")
 		for {
-			// Wait for 100us, then try to re-preempt in
-			// case of any races.
-			//
-			// Requires system stack.
-			if notetsleep(&sched.safePointNote, 100*1000) && h.flags&evacuation == 0 {
-				noteclear(&sched.safePointNote)
+
+			mapsleep()
+			if h.flags&evacuation == 0 {
 				break
 			}
 		}
@@ -915,6 +940,18 @@ next:
 }
 
 func hashGrow(t *maptype, h *hmap) {
+	if h.flags&evacuation != 0 {
+		println("hashGrow, evacuation found, in")
+		// throw("hw in")
+		for {
+			mapsleep()
+			if h.flags&evacuation == 0 {
+				println("hash grow out")
+				break
+			}
+		}
+		println("hashGrow, evacuation found, out")
+	}
 	// If we've hit the load factor, get bigger.
 	// Otherwise, there are too many overflow buckets,
 	// so keep the same number of buckets and "grow" laterally.
@@ -995,6 +1032,7 @@ func (h *hmap) oldbucketmask() uintptr {
 }
 
 func growWork(t *maptype, h *hmap, bucket uintptr) {
+	h.flags |= evacuation
 	// make sure we evacuate the oldbucket corresponding
 	// to the bucket we're about to use
 	evacuate(t, h, bucket&h.oldbucketmask())
@@ -1003,19 +1041,18 @@ func growWork(t *maptype, h *hmap, bucket uintptr) {
 	if h.growing() {
 		evacuate(t, h, h.nevacuate)
 	}
+	h.flags ^= evacuation
 }
 
 func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
-	h.flags |= evacuation
 	println("evacuate in")
-	printCallers()
 	if h.flags&hashWriting != 0 {
 		println("evacuate, hashWriting found, in")
 		// throw("hw in")
-		for {
-			usleep(100)
+		for i := 1; ; i++ {
+			mapsleep()
 			if h.flags&hashWriting == 0 {
-				println("out?")
+				println("evacuate loop out", i)
 				break
 			}
 		}
@@ -1177,7 +1214,6 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 		}
 	}
 	println("evacuate out")
-	h.flags ^= evacuation
 }
 
 func ismapkey(t *_type) bool {
